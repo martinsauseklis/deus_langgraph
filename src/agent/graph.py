@@ -1,75 +1,94 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
-from typing import TypedDict, Annotated
+from typing import Literal, TypedDict, Annotated
+from langgraph.graph.message import add_messages
 from langchain.messages import AnyMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from shutil import copytree
 from langgraph.runtime import Runtime
 from operator import add
 from dataclasses import dataclass
-import subprocess
 import asyncio
+import os
+from utils.find_free_port import find_port
 
+NPM_PATH = os.getenv("NPM_PATH")
+CONFIG_SERVER = os.getenv("CONFIG_SERVER")
 
 @dataclass
 class Context:
-    user_id: str
-
+    pass
 
 class AgentState(TypedDict):
     create: bool
     thread_id: str
-    node_installed: int
-
+    server_port: str | None
+    messages: Annotated[list[AnyMessage], add_messages]
+    stop_server: Literal[True] | None
 
 def check_if_create(state: AgentState) -> str:
-    return state["create"]
+    if(state.get("stop_server", None)):
+        return "stop_server"
+
+    if(state["create"]):
+        return "copy_files"
+    
+    if(state.get("server_port", None) != None):
+        return "process_message"
+    
+    else:
+        return "run_dev_server"
 
 
-def create_config(state: AgentState, config: RunnableConfig, runtime: Runtime[Context]) -> AgentState:
+def copy_files(state: AgentState, config: RunnableConfig):
+    copytree("workspace/template", "workspace/" + config["metadata"]["thread_id"])
+
+
+async def install_node_modules(state: AgentState, config: RunnableConfig):   
+    run = await asyncio.create_subprocess_exec(NPM_PATH, "install", cwd=f"workspace/{config["metadata"]["thread_id"]}")
+    await run.wait()
     return {
-        "thread_id": config["metadata"]["thread_id"]
+        "create": False
+    }
+    
+
+
+async def run_dev_server(state: AgentState, config: RunnableConfig) -> AgentState:
+    port = str(find_port())
+        
+    process =  await asyncio.create_subprocess_exec("./start_server.sh", port, cwd=f"workspace/{config["metadata"]["thread_id"]}")
+    
+    return {
+        "server_port": port
+    }
+
+def process_message(state: AgentState) -> AgentState:
+    return {
+        "messages": [
+            AIMessage(f"The human message was: '{state['messages'][-1].content[0].get("text")}'")
+        ]
+    }
+
+async def stop_server(state: AgentState, config: RunnableConfig) -> AgentState:
+    process =  await asyncio.create_subprocess_exec("./stop_server.sh", state["server_port"], cwd=f"workspace/{config["metadata"]["thread_id"]}")
+    return {
+        "server_port": None,
+        "stop_server": None
     }
 
 
-def update_config(state: AgentState) -> AgentState:
-    return state
-
-
-def copy_files(state: AgentState) -> AgentState:
-    # copytree("workspace/template", "workspace/" + state["thread_id"])
-    return state
-
-
-async def install_node_modules(state: AgentState) -> AgentState:
-    run = subprocess.run(["npm.cmd", "install"], cwd="workspace/template")
-
-    return {
-        "node_installed": run.returncode
-    }
-
-
-def run_dev_server(state: AgentState) -> AgentState:
-    process = subprocess.Popen(
-        ["npm.cmd", "run", "dev"], cwd="workspace/template")
-    print(process.pid)
-    print("started dev server")
-    return state
-
-
-workflow = StateGraph(AgentState, context_schema=Context)
-workflow.add_node("create_config", create_config)
-workflow.add_node("update_config", update_config)
+workflow = StateGraph(AgentState)
 workflow.add_node("copy_files", copy_files)
 workflow.add_node("install_node_modules", install_node_modules)
 workflow.add_node("run_dev_server", run_dev_server)
+workflow.add_node("process_message", process_message)
+workflow.add_node("stop_server", stop_server)
 
 workflow.add_conditional_edges(START, check_if_create, {
-                               True: "create_config", False: "update_config"})
-workflow.add_edge("create_config", "copy_files")
+                               "copy_files": "copy_files", "run_dev_server": "run_dev_server", "process_message": "process_message", "stop_server": "stop_server"})
 workflow.add_edge("copy_files", "install_node_modules")
 workflow.add_edge("install_node_modules", "run_dev_server")
-workflow.add_edge("run_dev_server", END)
-workflow.add_edge("update_config", "run_dev_server")
-workflow.add_edge("run_dev_server", END)
+workflow.add_edge("run_dev_server", "process_message")
+workflow.add_edge("process_message", END)
+workflow.add_edge("stop_server", END)
 graph = workflow.compile()
