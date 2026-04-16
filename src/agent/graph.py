@@ -1,94 +1,117 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from typing import Literal, TypedDict, Annotated
-from langgraph.graph.message import add_messages
-from langchain.messages import AnyMessage, AIMessage
+from langchain.messages import AnyMessage, AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from shutil import copytree
+from langchain_anthropic import ChatAnthropic
 from langgraph.runtime import Runtime
-from operator import add
+from langchain_anthropic import ChatAnthropic
+from langchain.agents.middleware import ModelRequest, ShellToolMiddleware, HostExecutionPolicy, dynamic_prompt
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
 from dataclasses import dataclass
+from operator import add
 import asyncio
+import aiohttp
 import os
-from utils.find_free_port import find_port
+import json
 
 NPM_PATH = os.getenv("NPM_PATH")
 CONFIG_SERVER = os.getenv("CONFIG_SERVER")
+WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
 
 @dataclass
 class Context:
-    pass
+    subdirectory: str
+
+@dynamic_prompt
+def context_aware_prompt(request: ModelRequest):
+    subdirectory = request.runtime.context.subdirectory
+
+    return f"""You are a master senior developer. 
+        As such you operate only in the subdirectory called {subdirectory}.
+        You cannot and must not under no circumstances operate outside the subdirectory.
+        Before using shell tool always make sure you are withing the subdirectory. You can 
+        run commands within nested directories but not in parent directory.
+        Do NOT RUN the .sh files in the directory. Those are meant for user to execute from 
+        the UI.
+        """
+
+sonnet = ChatAnthropic(
+    model_name="claude-sonnet-4-6",
+    streaming=True,
+    effort="high",
+    max_retries=2,
+)
+
+coding_agent = create_agent(
+    model=sonnet,
+    middleware=[
+        ShellToolMiddleware(
+            workspace_root=WORKSPACE_DIR,
+            execution_policy=HostExecutionPolicy()
+        ),
+        context_aware_prompt
+    ],
+    context_schema=Context,
+)
 
 class AgentState(TypedDict):
-    create: bool
-    thread_id: str
-    server_port: str | None
-    messages: Annotated[list[AnyMessage], add_messages]
-    stop_server: Literal[True] | None
+    create: bool = False
+    messages: Annotated[list[AnyMessage], add] = []
 
-def check_if_create(state: AgentState) -> str:
-    if(state.get("stop_server", None)):
-        return "stop_server"
+def is_create(state: AgentState):
+    if state["create"]:
+        print("teh satet", state)
+        return "setup"
 
-    if(state["create"]):
-        return "copy_files"
+    return "process_input"
+
+async def setup(state: AgentState, config: RunnableConfig): 
+    metadata = config.get("metadata")
+    thread_id = metadata.get("thread_id")
+    config_name = metadata.get("config_name")
+    config_author = metadata.get("config_author")
     
-    if(state.get("server_port", None) != None):
-        return "process_message"
-    
-    else:
-        return "run_dev_server"
-
-
-def copy_files(state: AgentState, config: RunnableConfig):
-    copytree("workspace/template", "workspace/" + config["metadata"]["thread_id"])
-
-
-async def install_node_modules(state: AgentState, config: RunnableConfig):   
-    run = await asyncio.create_subprocess_exec(NPM_PATH, "install", cwd=f"workspace/{config["metadata"]["thread_id"]}")
-    await run.wait()
-    return {
-        "create": False
+    request_body = {
+        "thread_id": thread_id,
+        "config_name": config_name,
+        "config_author": config_author
     }
+    print("In setup")
+    async with aiohttp.ClientSession(CONFIG_SERVER) as session:
+        async with session.post("/create", json=request_body) as response:
+            return {
+                "create": False,
+                "messages": [AIMessage(content="The setup is done. You can run the server.")]
+            }
     
 
 
-async def run_dev_server(state: AgentState, config: RunnableConfig) -> AgentState:
-    port = str(find_port())
-        
-    process =  await asyncio.create_subprocess_exec("./start_server.sh", port, cwd=f"workspace/{config["metadata"]["thread_id"]}")
+async def process_input(state: AgentState, config: RunnableConfig):
+
+    response = await coding_agent.ainvoke(
+        input={
+            "messages": state["messages"]
+        },
+        context=Context(config["metadata"]["thread_id"]),
+    )
+    
     
     return {
-        "server_port": port
-    }
-
-def process_message(state: AgentState) -> AgentState:
-    return {
-        "messages": [
-            AIMessage(f"The human message was: '{state['messages'][-1].content[0].get("text")}'")
-        ]
-    }
-
-async def stop_server(state: AgentState, config: RunnableConfig) -> AgentState:
-    process =  await asyncio.create_subprocess_exec("./stop_server.sh", state["server_port"], cwd=f"workspace/{config["metadata"]["thread_id"]}")
-    return {
-        "server_port": None,
-        "stop_server": None
+        "messages": [AIMessage(content="Danonki")]
     }
 
 
 workflow = StateGraph(AgentState)
-workflow.add_node("copy_files", copy_files)
-workflow.add_node("install_node_modules", install_node_modules)
-workflow.add_node("run_dev_server", run_dev_server)
-workflow.add_node("process_message", process_message)
-workflow.add_node("stop_server", stop_server)
+workflow.add_node("setup", setup)
+workflow.add_node("process_input", process_input)
 
-workflow.add_conditional_edges(START, check_if_create, {
-                               "copy_files": "copy_files", "run_dev_server": "run_dev_server", "process_message": "process_message", "stop_server": "stop_server"})
-workflow.add_edge("copy_files", "install_node_modules")
-workflow.add_edge("install_node_modules", "run_dev_server")
-workflow.add_edge("run_dev_server", "process_message")
-workflow.add_edge("process_message", END)
-workflow.add_edge("stop_server", END)
+workflow.add_conditional_edges(START, is_create, {
+    "setup": "setup",
+    "process_input": "process_input"
+})
+workflow.add_edge("setup", END)
+workflow.add_edge("process_input", END)
 graph = workflow.compile()
