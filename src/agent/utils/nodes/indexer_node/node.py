@@ -7,6 +7,7 @@ from agent.utils.state import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
+
 WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
 
 
@@ -15,5 +16,19 @@ async def indexer_node(state: AgentState, config: RunnableConfig) -> AgentState:
     project_structure = await asyncio.to_thread(
         run_indexer, PROJ_PATH, f"{PROJ_PATH}/ts_index.json"
     )
-
-    return {"project_structure": project_structure}
+    if state.get("create"):
+        return Command(
+            goto=END,
+            update={
+                "project_structure": project_structure,
+                "tool_call_count": 0,
+                "create": False
+                }
+        )
+    
+    return Command(
+        goto="testing",
+        update={
+            "project_structure": project_structure,
+            "tool_call_count": 0,
+        })

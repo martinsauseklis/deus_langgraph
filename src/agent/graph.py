@@ -11,11 +11,11 @@ from agent.utils.nodes.summarization_node.node import summarization_node
 from agent.utils.nodes.testing_node.tools_node import testing_tools
 from agent.utils.nodes.setup_node.node import setup_node
 from agent.utils.nodes.ui_ux_node.node import ui_ux_node
+
 from agent.utils.routers.development_router import development_router
 from agent.utils.routers.start_router import start_router
 from agent.utils.routers.testing_router import testing_router
 from agent.utils.state import AgentState
-
 
 workflow = StateGraph(AgentState)
 workflow.add_node("planner_node", planner_node)
@@ -39,7 +39,7 @@ workflow.add_conditional_edges("planner_node", development_router, {
     "developer_node": "developer_node",
     "testing_node": "testing_node",
     "ui_ux_node": "ui_ux_node",
-    "__end__": "index_project"
+    "__end__": END
 })
 workflow.add_conditional_edges("developer_node", development_router, {
     "developer_node": "developer_node",
@@ -47,13 +47,13 @@ workflow.add_conditional_edges("developer_node", development_router, {
     "business_analyst_node": "business_analyst_node",
     "testing_node": "testing_node",
     "ui_ux_node": "ui_ux_node",
-    "__end__": "index_project"
+    "__end__": END
 })
 workflow.add_conditional_edges("business_analyst_node", development_router, {
     "developer_node": "developer_node",
     "testing_node": "testing_node",
     "ui_ux_node": "ui_ux_node",
-    "__end__": "index_project"
+    "__end__": END
 })
 workflow.add_conditional_edges("testing_node", development_router, {
     "testing_node": "testing_node",
@@ -61,13 +61,13 @@ workflow.add_conditional_edges("testing_node", development_router, {
     "business_analyst_node": "business_analyst_node",
     "developer_node": "developer_node",
     "ui_ux_node": "ui_ux_node",
-    "__end__": "index_project"
+    "__end__": END
 })
 workflow.add_conditional_edges("ui_ux_node", development_router, {
     "business_analyst_node": "business_analyst_node",
     "developer_node": "developer_node",
     "testing_node": "testing_node",
-    "__end__": "index_project"
+    "__end__": END
 })
 # workflow.add_conditional_edges("developer_node", tools_condition, {
 #     "tools": "developer_tools",

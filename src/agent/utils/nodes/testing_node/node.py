@@ -1,12 +1,8 @@
-import inspect
 import os
 from string import Template
-import aiohttp
-import anthropic
-from langchain.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.messages import HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools import ShellTool
-from langgraph.graph import END
 from agent.utils.state import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
@@ -55,40 +51,16 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
     if state.get("messages", [])[-1].type != "tool":
         model_input.append(HumanMessage(sequence_step.prompt))
 
-    try:
-        response = await tester.ainvoke(input=model_input)
+    response = await tester.ainvoke(input=model_input)
 
-        response.name = "testing_engineer"
+    response.name = "testing_engineer"
 
-        if len(response.tool_calls) == 0:
-            sequence.pop(0)
-            async with aiohttp.ClientSession(CONFIG_SERVER) as session:
-                async with session.get(f"/set_testable/{thread_id}") as res:
-                    res
+    if len(response.tool_calls) == 0:
+        sequence.pop(0)
 
-        return {
-            "messages": [response],
-            "sequence": sequence,
-            "testing_tool_call_count": state.get("testing_tool_call_count", 0)
-            + len(response.tool_calls or []),
-        }
-
-    except anthropic.APIError as e:
-        return {
-            "messages": [
-                AIMessage(
-                    f"Node {inspect.currentframe().f_code.co_name} failed with Anthropic API error: {e.message}"
-                )
-            ],
-            "sequence": [],
-        }
-
-    except Exception as e:
-        return {
-            "messages": [
-                AIMessage(
-                    f"Node {inspect.currentframe().f_code.co_name} failed with: {str(e)}"
-                )
-            ],
-            "sequence": [],
-        }
+    return {
+        "messages": [response],
+        "sequence": sequence,
+        "testing_tool_call_count": state.get("testing_tool_call_count", 0)
+        + len(response.tool_calls or []),
+    }

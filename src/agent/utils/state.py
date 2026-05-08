@@ -30,5 +30,4 @@ class AgentState(TypedDict):
     tool_call_count: int
     testing_tool_call_count: int  # separate budget for testing agent
     sequence: PlannerOutput
-    can_test: bool
 
