@@ -1,5 +1,10 @@
-from langchain.messages import RemoveMessage
+import inspect
+
+import anthropic
+from click import Command
+from langchain.messages import AIMessage, RemoveMessage
 from langchain_anthropic import ChatAnthropic
+from langgraph.graph import END
 from agent.utils.nodes.summarization_node.utils import _flatten_ai_content
 from agent.utils.state import AgentState
 
@@ -34,8 +39,28 @@ def summarization_node(state: AgentState):
             messages.append({"type": "ai", "content": _flatten_ai_content(msg)})
 
     messages.append({"type": "human", "content": summary_message})
+    try:
+        response = summarization_model.invoke(messages)
+        response.id = f"do-not-render-{response.id}"
+        delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
+        return {"summary": response.content, "messages": delete_messages}
+    
+    except anthropic.APIError as e:
+        return {
+            "messages": [
+                AIMessage(
+                    f"Node {inspect.currentframe().f_code.co_name} failed with Anthropic API error: {e.message}"
+                )
+            ],
+            "sequence": [],
+        }
 
-    response = summarization_model.invoke(messages)
-    response.id = f"do-not-render-{response.id}"
-    delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
-    return {"summary": response.content, "messages": delete_messages}
+    except Exception as e:
+        return {
+            "messages": [
+                AIMessage(
+                    f"Node {inspect.currentframe().f_code.co_name} failed with: {str(e)}"
+                )
+            ],
+            "sequence": [],
+        }

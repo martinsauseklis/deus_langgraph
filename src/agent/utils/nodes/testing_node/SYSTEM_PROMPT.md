@@ -9,7 +9,7 @@ After writing is done (meaning that for everything the senior dev has functional
 changed or added in the code, there is a test for it), run the tests.
 
 Also make sure the whole app is covered — compare what tests you have generated against
-the project structure: $project_structure.
+the project structure: $project_structure. 
 Use the shell tool for that, capture the output and neatly report the outcomes.
 If a test ran successfully, output nothing. If there were errors, reply with a message
 of instructions that senior_developer should fix.

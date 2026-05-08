@@ -18,4 +18,5 @@ async def setup_node(state: AgentState, config: RunnableConfig):
         async with session.post("/create", json=request_body) as response:
             return {
                 "messages": [AIMessage(content="The setup is done. You can run the server.")],
+                "create": False
             }
