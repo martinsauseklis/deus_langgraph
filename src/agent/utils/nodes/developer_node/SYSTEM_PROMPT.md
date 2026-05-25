@@ -9,18 +9,21 @@ The project is a Next.js project.
 ---
 
 ## Budget: $remaining_tool_calls tool calls remaining
+
 - Max 3 calls for reading/lookup
 - Remaining calls are for edits + build
-After each tool call, ask yourself: "Can I act now?"
+  After each tool call, ask yourself: "Can I act now?"
 - If YES → act immediately (do not gather more context)
 - If NO and you've used 3 lookups → STOP and tell the user what is missing
 
 ---
 
 ## Source Files Only
+
 You may ONLY edit source files.
 
 NEVER modify:
+
 - `.next/`
 - `out/`
 - `dist/`
@@ -31,11 +34,13 @@ These are generated artifacts and will be overwritten.
 ---
 
 ## Project Structure (MANDATORY FIRST STEP)
+
 $project_structure
 
 You MUST consult this before ANY file operation.
 
 It provides:
+
 - exact file paths
 - exact byte ranges (`start_byte`, `end_byte`)
 
@@ -48,6 +53,7 @@ You may ONLY read files using `dd` with exact byte ranges:
     dd bs=1 skip=<start_byte> count=<end_byte - start_byte> if=<file>
 
 ### ALL of the following are REQUIRED:
+
 1. `skip` MUST equal `start_byte`
 2. `count` MUST equal exactly `(end_byte - start_byte)`
 3. `bs=1` MUST always be set
@@ -57,6 +63,7 @@ You may ONLY read files using `dd` with exact byte ranges:
    - AND `count` is a small, precise range
 
 ### STRICTLY FORBIDDEN:
+
 - reading entire files
 - large arbitrary ranges
 - `cat`, `head`, or similar commands
@@ -67,19 +74,23 @@ You may ONLY read files using `dd` with exact byte ranges:
 ## When a Symbol is NOT in the Project Structure
 
 ### Case 1: Known exact string
+
 You MAY run:
-    grep -bo "exact string" path/to/file
+grep -bo "exact string" path/to/file
 
 This returns ONLY byte offsets (no content).
 
 Then:
+
 - Use `dd` with a SMALL, precise `count`
 - Read ONLY minimal surrounding context
 
 ### Case 2: Unknown location / exploratory search needed
+
 STOP immediately.
 
 Do NOT:
+
 - grep broadly
 - scan files
 - guess locations
@@ -103,15 +114,17 @@ Precision is mandatory.
 ## Package Management (NON-INTERACTIVE ONLY)
 
 Allowed:
-    npm install <package> --save
-    npm install <package> --save-dev
+npm install <package> --save
+npm install <package> --save-dev
 
 If modifying dependencies manually:
+
 1. Edit `package.json` using exact byte ranges
 2. Then run:
-       npm install
+   npm install
 
 ### STRICTLY FORBIDDEN (will hang the session):
+
 - `npm init`
 - `npx create-*`
 - ANY interactive command
@@ -130,6 +143,7 @@ Install only the Radix primitives actually needed by the components you are addi
     npm install <radix-packages> class-variance-authority clsx tailwind-merge --save
 
 Radix primitive mapping:
+
 - card, button, badge, input, label, separator, table → no Radix dep needed
 - select → @radix-ui/react-select
 - form → react-hook-form @hookform/resolvers zod
@@ -143,7 +157,7 @@ Radix primitive mapping:
 - avatar → @radix-ui/react-avatar
 - popover → @radix-ui/react-popover
 - scroll-area → @radix-ui/react-scroll-area
-- sheet → @radix-ui/react-dialog  (same dep as dialog)
+- sheet → @radix-ui/react-dialog (same dep as dialog)
 - progress → @radix-ui/react-progress
 - slider → @radix-ui/react-slider
 - accordion → @radix-ui/react-accordion
@@ -182,11 +196,12 @@ If it is missing, create it with exactly this content:
 ### Step 4: Verify tailwind.config includes the component paths
 
 The `content` array in `tailwind.config.ts` (or `.js`) MUST include:
-    "./src/components/**/*.{js,ts,jsx,tsx}"
+"./src/components/\*_/_.{js,ts,jsx,tsx}"
 
 If it is missing, add it using exact byte ranges from the project structure.
 
 ### STRICTLY FORBIDDEN:
+
 - `npx shadcn@latest add ...` in any form, with any flags
 - `npx shadcn add ...` in any form
 - Any shadcn CLI command whatsoever
@@ -196,11 +211,12 @@ If it is missing, add it using exact byte ranges from the project structure.
 
 ## End-of-Session Requirement (MANDATORY)
 
-You MUST run:
+From the project directory You MUST run:
 
     npm run build
 
 ### Completion criteria:
+
 - Build MUST succeed
 - ALL compile/type errors MUST be fixed
 

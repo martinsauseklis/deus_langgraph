@@ -7,6 +7,9 @@ from langgraph.graph import END
 from agent.utils.state import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
+from agent.utils.logger import add_logger, logger
+import asyncio
+
 
 sonnet = ChatAnthropic(
     model_name="claude-sonnet-4-6",
@@ -14,13 +17,13 @@ sonnet = ChatAnthropic(
     max_retries=2,
 )
 
-
+@add_logger
 async def business_analyst_node(
     state: AgentState, config: RunnableConfig
 ) -> AgentState:
     sequence = state.get("sequence", [])
     sequence_step = sequence[0]
-    
+
     try:
         response = await sonnet.ainvoke(
             input=[
@@ -36,6 +39,7 @@ async def business_analyst_node(
                 HumanMessage(sequence_step.prompt),
             ]
         )
+
         msg = AIMessage(response.content)
         msg.name = "business_analyst"
         sequence.pop(0)

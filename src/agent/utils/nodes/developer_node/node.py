@@ -11,6 +11,9 @@ from agent.utils.nodes.developer_node.tools.db_tool import db_tools
 from langgraph.graph import END
 import anthropic
 import inspect
+from agent.utils.logger import add_logger, logger
+from agent.utils.nodes.developer_node.tools_node import developer_tools
+import asyncio
 
 WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
 MAX_TOOL_CALLS = 25
@@ -21,20 +24,20 @@ sonnet = ChatAnthropic(
     max_retries=2,
 )
 
-sonnet_with_tools = sonnet.bind_tools([ShellTool(), *db_tools])
-
-
 with open("./src/agent/utils/nodes/developer_node/SYSTEM_PROMPT.md") as file:
     SYSTEM_PROMPT_TEMPLATE = Template(file.read())
 
+@add_logger
+async def developer_node(state: AgentState, config: RunnableConfig) -> AgentState:  
+    sonnet_with_tools = sonnet.bind_tools(developer_tools)
 
-async def developer_node(state: AgentState, config: RunnableConfig) -> AgentState:
     sequence = state.get("sequence", [])
     sequence_step = sequence[0]
     PROJ_PATH = f"{WORKSPACE_DIR}/{config['metadata']['thread_id']}"
     remaining_tool_calls = MAX_TOOL_CALLS - state.get("tool_call_count", 0)
     sen_dev = sonnet_with_tools if remaining_tool_calls > 0 else sonnet
 
+    
     model_input = [
         SystemMessage(
             SYSTEM_PROMPT_TEMPLATE.substitute(

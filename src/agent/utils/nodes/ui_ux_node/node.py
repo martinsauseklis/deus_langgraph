@@ -1,5 +1,6 @@
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
+from agent.utils.logger import add_logger
 from agent.utils.state import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
@@ -10,8 +11,9 @@ sonnet = ChatAnthropic(
     max_retries=2,
 )
 
-
+@add_logger
 async def ui_ux_node(state: AgentState, config: RunnableConfig) -> AgentState:
+
     sequence = state.get("sequence", [])
     sequence_step = sequence[0]
     response = await sonnet.ainvoke(
@@ -27,5 +29,6 @@ The project is a Next.js app."""
     )
     msg = AIMessage(response.content)
     msg.name = "ui_ux_engineer"
-    updated_sequence = sequence[-len(sequence) + 1 :]
-    return {"messages": [msg], "sequence": updated_sequence}
+    sequence.pop(0)
+
+    return {"messages": [msg], "sequence": sequence}

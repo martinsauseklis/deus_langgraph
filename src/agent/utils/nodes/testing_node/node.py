@@ -7,9 +7,11 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools import ShellTool
 from langgraph.graph import END
+from agent.utils.logger import add_logger
 from agent.utils.state import AgentState
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
+from agent.utils.nodes.testing_node.tools_node import testing_tools
 
 WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
 CONFIG_SERVER = os.getenv("CONFIG_SERVER")
@@ -21,14 +23,15 @@ sonnet = ChatAnthropic(
     max_retries=2,
 )
 
-sonnet_with_tools = sonnet.bind_tools([ShellTool()])
+
 
 
 with open("./src/agent/utils/nodes/testing_node/SYSTEM_PROMPT.md") as file:
     SYSTEM_PROMPT_TEMPLATE = Template(file.read())
 
-
+@add_logger
 async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
+    sonnet_with_tools = sonnet.bind_tools(testing_tools)
     sequence = state.get("sequence", [])
     sequence_step = sequence[0]
     PROJ_PATH = f"{WORKSPACE_DIR}/{config['metadata']['thread_id']}"
