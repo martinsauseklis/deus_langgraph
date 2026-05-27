@@ -15,8 +15,28 @@ async def setup_node(state: AgentState, config: RunnableConfig):
         "config_name": metadata.get("config_name"),
         "config_author": metadata.get("config_author"),
     }
-    async with aiohttp.ClientSession(CONFIG_SERVER) as session:
-        async with session.post("/create", json=request_body) as response:
-            return {
-                "messages": [AIMessage(content="The setup is done. You can run the server.")],
-            }
+    try:
+        async with aiohttp.ClientSession(CONFIG_SERVER) as session:
+            async with session.post("/create", json=request_body) as response:
+                if response.status >= 400:
+                    body = await response.text()
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content=f"Setup failed: CONFIG_SERVER returned HTTP {response.status}. "
+                                f"Body: {body[:200]}. Cannot proceed with project creation."
+                            )
+                        ],
+                    }
+                return {
+                    "messages": [AIMessage(content="The setup is done. You can run the server.")],
+                }
+    except aiohttp.ClientError as e:
+        return {
+            "messages": [
+                AIMessage(
+                    content=f"Setup failed: could not reach CONFIG_SERVER ({CONFIG_SERVER}): {e}. "
+                    "Cannot proceed with project creation."
+                )
+            ],
+        }

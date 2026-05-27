@@ -8,16 +8,7 @@ Tools:
   - create_schema         → create a schema
   - create_table          → create a table from a column spec
   - insert_rows           → batch insert rows
-  - query_db              → run a SELECT query, returns rows as JSON
-
-Usage:
-    from pg_tools import db_tools, tool_node
-
-    # bind to your LLM
-    llm_with_tools = llm.bind_tools(db_tools)
-
-    # add to your graph
-    graph.add_node("tools", tool_node)
+  - query_db              → run a SELECT query in a read-only transaction
 """
 
 import json
@@ -40,6 +31,31 @@ def get_conn() -> psycopg2.extensions.connection:
         user=os.getenv("PG_USER", "myuser"),
         password=os.getenv("PG_PASSWORD", "mypassword"),
     )
+
+
+# ─── type allowlist ───────────────────────────────────────────────────────────
+
+# LLM-supplied column types are validated against this set before being
+# interpolated into DDL. This prevents SQL injection via crafted type strings.
+_ALLOWED_PG_TYPES: frozenset[str] = frozenset({
+    "TEXT", "VARCHAR", "CHAR", "BPCHAR",
+    "BOOLEAN", "BOOL",
+    "INTEGER", "INT", "INT2", "INT4", "INT8", "BIGINT", "SMALLINT",
+    "SERIAL", "BIGSERIAL", "SMALLSERIAL",
+    "FLOAT", "FLOAT4", "FLOAT8", "DOUBLE PRECISION", "REAL",
+    "NUMERIC", "DECIMAL", "MONEY",
+    "DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMETZ",
+    "INTERVAL", "UUID", "JSON", "JSONB", "BYTEA", "OID",
+    "CITEXT", "INET", "CIDR", "MACADDR",
+})
+
+
+def _pg_type_is_safe(type_str: str) -> bool:
+    """Return True if type_str is a recognised PostgreSQL base type."""
+    # Strip precision/scale (e.g. VARCHAR(255) → VARCHAR, NUMERIC(10,2) → NUMERIC)
+    # and array brackets (e.g. TEXT[] → TEXT).
+    base = type_str.strip().upper().split("(")[0].split("[")[0].strip()
+    return base in _ALLOWED_PG_TYPES
 
 
 # ─── input schemas ────────────────────────────────────────────────────────────
@@ -122,8 +138,8 @@ class QueryInput(BaseModel):
 
 @tool("check_schema_exists", args_schema=CheckSchemaInput)
 def check_schema_exists(schema_name: str) -> str:
-    """
-    Check whether a Postgres schema exists.
+    """Check whether a Postgres schema exists.
+
     Call this before create_schema to avoid redundant operations.
     """
     sql = "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = %s);"
@@ -143,8 +159,8 @@ def check_schema_exists(schema_name: str) -> str:
 
 @tool("create_schema", args_schema=CreateSchemaInput)
 def create_schema(schema_name: str, if_not_exists: bool = True) -> str:
-    """
-    Create a Postgres schema.
+    """Create a Postgres schema.
+
     Always call check_schema_exists first to confirm the schema is not already present.
     """
     qualifier = "IF NOT EXISTS" if if_not_exists else ""
@@ -172,8 +188,7 @@ def create_table(
     columns: list[dict],
     if_not_exists: bool = True,
 ) -> str:
-    """
-    Create a table inside an existing Postgres schema from a column spec.
+    """Create a table inside an existing Postgres schema from a column spec.
 
     Column dict fields:
       name        (str)       — column name
@@ -181,16 +196,18 @@ def create_table(
       nullable    (bool)      — default True
       default     (str|None)  — SQL default expression e.g. "NOW()" or "'pending'"
       primary_key (bool)      — default False
-
-    Example columns:
-      [
-        {"name": "id",         "type": "SERIAL",      "primary_key": True, "nullable": False},
-        {"name": "email",      "type": "TEXT",         "nullable": False},
-        {"name": "created_at", "type": "TIMESTAMPTZ",  "default": "NOW()"},
-      ]
     """
-    # Guard against LangGraph passing already-deserialized ColumnSpec instances
     col_specs = [c if isinstance(c, ColumnSpec) else ColumnSpec(**c) for c in columns]
+
+    # Validate every column type before building any SQL.
+    for c in col_specs:
+        if not _pg_type_is_safe(c.type):
+            return (
+                f"Error: column type '{c.type}' is not in the allowed list. "
+                "Use standard PostgreSQL types such as TEXT, INTEGER, SERIAL, UUID, "
+                "JSONB, TIMESTAMPTZ, BOOLEAN, NUMERIC, etc."
+            )
+
     col_defs = []
     for c in col_specs:
         parts = [f'"{c.name}"', c.type]
@@ -230,16 +247,10 @@ def insert_rows(
     rows: list[dict],
     returning: Optional[str] = None,
 ) -> str:
-    """
-    Batch insert one or more rows into a Postgres table.
+    """Batch insert one or more rows into a Postgres table.
+
     All rows must have the same keys (column names).
     Use the 'returning' field to get back generated values like 'id'.
-
-    Example:
-      schema_name: "myschema"
-      table_name:  "users"
-      rows:        [{"name": "Alice", "status": "active"}, {"name": "Bob", "status": "pending"}]
-      returning:   "id"
     """
     if not rows:
         return "No rows provided — nothing inserted."
@@ -276,23 +287,23 @@ def insert_rows(
 
 @tool("query_db", args_schema=QueryInput)
 def query_db(query: str, params: Optional[list] = None) -> str:
+    """Execute a SELECT query and return results as a JSON string.
+
+    Runs in a read-only transaction — any write statement will be rejected
+    by the database regardless of the query text.
+    Use parameterized queries to pass values safely:
+      query:  "SELECT * FROM myschema.orders WHERE status = %s"
+      params: ["shipped"]
     """
-    Execute a SELECT query and return results as a JSON string.
-    Only SELECT statements are permitted — any other statement will be rejected.
-    Use parameterized queries to avoid SQL injection:
-      query:  "SELECT * FROM myschema.orders WHERE status = %s AND total > %s"
-      params: ["shipped", 100]
-    """
-    if not query.strip().upper().startswith("SELECT"):
-        return "Error: only SELECT statements are allowed in query_db."
     conn = None
     try:
         conn = get_conn()
+        conn.set_session(readonly=True, autocommit=True)
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(query, params or [])
             rows = cur.fetchall()
             result = [dict(r) for r in rows]
-        return json.dumps(result, default=str)  # default=str handles dates, decimals
+        return json.dumps(result, default=str)
     except Exception as e:
         return f"Error querying database: {e}"
     finally:

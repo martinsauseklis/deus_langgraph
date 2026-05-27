@@ -7,10 +7,10 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools import ShellTool
 from langgraph.graph import END
-from agent.utils.logger import add_logger
+from agent.utils.logger import add_logger, logger
 from agent.utils.state import AgentState
+from agent.utils.model_config import MODEL_NAME
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command
 from agent.utils.nodes.testing_node.tools_node import testing_tools
 
 WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
@@ -18,12 +18,10 @@ CONFIG_SERVER = os.getenv("CONFIG_SERVER")
 MAX_TOOL_CALLS = 25
 
 sonnet = ChatAnthropic(
-    model_name="claude-sonnet-4-6",
+    model_name=MODEL_NAME,
     streaming=True,
     max_retries=2,
 )
-
-
 
 
 with open("./src/agent/utils/nodes/testing_node/SYSTEM_PROMPT.md") as file:
@@ -32,7 +30,8 @@ with open("./src/agent/utils/nodes/testing_node/SYSTEM_PROMPT.md") as file:
 @add_logger
 async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
     sonnet_with_tools = sonnet.bind_tools(testing_tools)
-    sequence = state.get("sequence", [])
+    # Always work from a copy so we never mutate shared state.
+    sequence = list(state.get("sequence") or [])
     sequence_step = sequence[0]
     PROJ_PATH = f"{WORKSPACE_DIR}/{config['metadata']['thread_id']}"
     thread_id = config["metadata"]["thread_id"]
@@ -63,15 +62,33 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
 
         response.name = "testing_engineer"
 
-        if len(response.tool_calls) == 0:
-            sequence.pop(0)
-            async with aiohttp.ClientSession(CONFIG_SERVER) as session:
-                async with session.get(f"/set_testable/{thread_id}") as res:
-                    res
+        # Advance sequence and notify CONFIG_SERVER only when this step is done.
+        if not response.tool_calls:
+            new_sequence = sequence[1:]
+            if CONFIG_SERVER:
+                try:
+                    async with aiohttp.ClientSession(CONFIG_SERVER) as session:
+                        async with session.get(f"/set_testable/{thread_id}") as res:
+                            await res.read()
+                            if res.status >= 400:
+                                logger.warning(
+                                    "set_testable returned %s for thread %s",
+                                    res.status,
+                                    thread_id,
+                                    extra={"thread_id": thread_id},
+                                )
+                except aiohttp.ClientError as e:
+                    logger.warning(
+                        "set_testable request failed: %s",
+                        e,
+                        extra={"thread_id": thread_id},
+                    )
+        else:
+            new_sequence = sequence
 
         return {
             "messages": [response],
-            "sequence": sequence,
+            "sequence": new_sequence,
             "testing_tool_call_count": state.get("testing_tool_call_count", 0)
             + len(response.tool_calls or []),
         }

@@ -1,4 +1,7 @@
-.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests
+DEV_LOG=/tmp/langgraph_dev.log
+
+.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests \
+        e2e e2e-infra e2e-routing e2e-tools e2e-nodes e2e-flow logs dev dev-logs
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -21,6 +24,56 @@ test_profile:
 extended_tests:
 	python -m pytest --only-extended $(TEST_FILE)
 
+
+######################
+# DEV SERVER
+######################
+
+dev:
+	langgraph dev --config langgraph_dev.json 2>&1 | tee $(DEV_LOG)
+
+dev-logs:
+	tail -100 $(DEV_LOG)
+
+######################
+# E2E TESTS
+######################
+
+# Tier 1: infrastructure checks — no LLM, no server invocation (~seconds)
+e2e-infra:
+	python -m pytest tests/e2e/tier1_infra/ -v -s
+
+# Tier 1+2: routing logic — pure Python, no LLM (~seconds)
+e2e-routing:
+	python -m pytest tests/e2e/tier1_infra/ tests/e2e/tier2_routing/ -v -s
+
+# Tier 1-3: tool execution — no LLM, just tool calls (~10s)
+e2e-tools:
+	python -m pytest tests/e2e/tier1_infra/ tests/e2e/tier2_routing/ tests/e2e/tier3_tools/ -v -s
+
+# Tier 4: node-level tests — real LLM calls, server must be running (~minutes)
+e2e-nodes:
+	python -m pytest tests/e2e/tier4_nodes/ -v -s -m e2e_nodes
+
+# Tier 5: full end-to-end flow — real LLM, all services (~minutes)
+e2e-flow:
+	python -m pytest tests/e2e/tier5_flow/ -v -s -m e2e_flow
+
+# Everything
+e2e:
+	python -m pytest tests/e2e/ -v -s
+
+# Fetch event log for a thread: make logs T=<thread-id>
+logs:
+	@python scripts/logs.py $(T)
+
+# List recent threads
+logs-recent:
+	@python scripts/logs.py --recent
+
+# List recent threads that errored
+logs-errors:
+	@python scripts/logs.py --recent --errors
 
 ######################
 # LINTING AND FORMATTING

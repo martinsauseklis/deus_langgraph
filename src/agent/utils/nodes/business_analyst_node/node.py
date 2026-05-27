@@ -5,14 +5,14 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import END
 from agent.utils.state import AgentState
+from agent.utils.model_config import MODEL_NAME
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command
 from agent.utils.logger import add_logger, logger
 import asyncio
 
 
 sonnet = ChatAnthropic(
-    model_name="claude-sonnet-4-6",
+    model_name=MODEL_NAME,
     streaming=True,
     max_retries=2,
 )
@@ -21,7 +21,8 @@ sonnet = ChatAnthropic(
 async def business_analyst_node(
     state: AgentState, config: RunnableConfig
 ) -> AgentState:
-    sequence = state.get("sequence", [])
+    # Always work from a copy so we never mutate shared state.
+    sequence = list(state.get("sequence") or [])
     sequence_step = sequence[0]
 
     try:
@@ -31,7 +32,7 @@ async def business_analyst_node(
                     """You are a business analyst that translates customers' needs
                     into specific technical tasks to be passed to the UI/UX engineer.
                     Keep in mind that we are working currently on an existing Next.js
-                    project. Don't assume anything else or offer to work on anything other.
+                    project. Don't assume anything else or offer to work on anything else.
                     Senior developer will have a context of the app, so you don't need to explain
                     the Next.js part."""
                 ),
@@ -42,9 +43,8 @@ async def business_analyst_node(
 
         msg = AIMessage(response.content)
         msg.name = "business_analyst"
-        sequence.pop(0)
 
-        return {"messages": [msg], "sequence": sequence}
+        return {"messages": [msg], "sequence": sequence[1:]}
 
     except anthropic.APIError as e:
         return {

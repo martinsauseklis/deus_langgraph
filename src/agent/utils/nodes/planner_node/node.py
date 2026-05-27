@@ -5,15 +5,15 @@ import anthropic
 from langchain.messages import AIMessage, SystemMessage
 from langchain_anthropic import ChatAnthropic
 from agent.utils.state import AgentState, PlannerOutput
+from agent.utils.model_config import MODEL_NAME
 from langchain_core.runnables import RunnableConfig
 from agent.utils.logger import add_logger, logger
 import asyncio
 
 WORKSPACE_DIR = os.getenv("WORKSPACE_DIR")
-MAX_TOOL_CALLS = 25
 
 sonnet = ChatAnthropic(
-    model_name="claude-sonnet-4-6",
+    model_name=MODEL_NAME,
     streaming=True,
     max_retries=2,
 )
@@ -37,7 +37,6 @@ async def planner_node(state: AgentState, config: RunnableConfig) -> AgentState:
 
         return {
             "sequence": response.next_nodes,
-            "can_test": False,
             "tool_call_count": 0,
             "testing_tool_call_count": 0,
         }

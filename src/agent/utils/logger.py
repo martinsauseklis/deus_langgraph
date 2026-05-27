@@ -7,6 +7,7 @@ from datetime import datetime
 import asyncio
 
 from os import getenv
+from agent.utils.event_logger import log_event
 
 
 class ThreadedDateFileHandler(logging.Handler):
@@ -30,7 +31,7 @@ class ThreadedDateFileHandler(logging.Handler):
     ):
         super().__init__()
 
-        self.base_dir = Path(base_dir)
+        self.base_dir = Path(base_dir or "/tmp/deus_logs")
         self.max_bytes = max_bytes
         self.backup_count = backup_count
         self.encoding = encoding
@@ -109,31 +110,63 @@ logger.addHandler(handler)
 def add_logger(node: Callable) -> Callable:
     @wraps(node)
     async def wrapper(*args, **kwargs):
+        thread_id: str = kwargs.get("config", {}).get("metadata", {}).get("thread_id", "unknown")
+        state = args[0] if args else {}
+
         await asyncio.to_thread(
             logger.info,
             "Entering node %s",
             node.__name__,
-            extra={"thread_id": kwargs.get("config")["metadata"]["thread_id"]},
+            extra={"thread_id": thread_id},
+        )
+        await asyncio.to_thread(
+            log_event,
+            thread_id,
+            node.__name__,
+            "enter",
+            tool_call_count=state.get("tool_call_count", 0),
+            testing_tool_call_count=state.get("testing_tool_call_count", 0),
+            sequence_len=len(state.get("sequence") or []),
         )
 
         await asyncio.to_thread(
             logger.info,
             "Node state: %s",
-            {
-                k: v
-                for (k, v) in args[0].items()
-                if k not in ["messages", "project_structure"]
-            },
-            extra={"thread_id": kwargs.get("config")["metadata"]["thread_id"]},
+            {k: v for (k, v) in state.items() if k not in ["messages", "project_structure"]},
+            extra={"thread_id": thread_id},
         )
 
         result = await node(*args, **kwargs)
+
+        # Detect error: nodes catch exceptions and return them as AIMessages.
+        is_error = False
+        if result and isinstance(result, dict):
+            for msg in result.get("messages", []):
+                content = getattr(msg, "content", "") or ""
+                if isinstance(content, str) and "failed with" in content.lower():
+                    is_error = True
+                    await asyncio.to_thread(
+                        log_event,
+                        thread_id,
+                        node.__name__,
+                        "error",
+                        message=content[:500],
+                    )
+                    break
+
+        await asyncio.to_thread(
+            log_event,
+            thread_id,
+            node.__name__,
+            "exit" if not is_error else "exit_with_error",
+            result_keys=list(result.keys()) if isinstance(result, dict) else [],
+        )
 
         await asyncio.to_thread(
             logger.info,
             "Node result: %s",
             result,
-            extra={"thread_id": kwargs.get("config")["metadata"]["thread_id"]},
+            extra={"thread_id": thread_id},
         )
 
         return result
