@@ -14,28 +14,35 @@ sonnet = ChatAnthropic(
     max_retries=2,
 )
 
+
 @add_logger
 async def ui_ux_node(state: AgentState, config: RunnableConfig) -> AgentState:
-    # Always work from a copy so we never mutate shared state.
-    sequence = list(state.get("sequence") or [])
-    sequence_step = sequence[0]
 
     try:
         response = await sonnet.ainvoke(
             input=[
                 SystemMessage(
                     """You are a master UI/UX engineer. Based on the business analyst's
-input, provide an outline of UI libraries and layouts the senior developer must use.
-The project is a Next.js app."""
+                    input, provide information that would make the project a UI/UX success.
+                    The project is a Next.js app. The response
+                    will be consumed by another AI agent. So create whatever transfers your output to next
+                    agent the best. 
+                    
+                    Keep the responses as concise as needed, do not generate full code as that is the task of the developer. Just
+                    generate hints for the developer AI agent. They dont have to be user friendly, they need to be AI friendly."""
                 ),
                 *state["messages"],
-                HumanMessage(sequence_step.prompt),
+                # HumanMessage(state["prompt_for_next_node"]),
             ]
         )
         msg = AIMessage(response.content)
         msg.name = "ui_ux_engineer"
 
-        return {"messages": [msg], "sequence": sequence[1:]}
+        return {
+            "messages": [msg],
+            "prompt_for_next_node": None,
+            "next_node": None,
+        }
 
     except anthropic.APIError as e:
         return {
@@ -44,7 +51,8 @@ The project is a Next.js app."""
                     f"Node {inspect.currentframe().f_code.co_name} failed with Anthropic API error: {e.message}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None,
         }
 
     except Exception as e:
@@ -54,5 +62,6 @@ The project is a Next.js app."""
                     f"Node {inspect.currentframe().f_code.co_name} failed with: {str(e)}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None,
         }

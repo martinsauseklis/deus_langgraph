@@ -37,8 +37,12 @@ async def input_validation_node(
                 None,
             )
             if not tool_message:
-                tool_msg = ToolMessage(content="Tool result missing", id=str(uuid4()), tool_call_id=id)
+                tool_msg = ToolMessage(
+                    content="Tool result missing", id=str(uuid4()), tool_call_id=id
+                )
                 tool_messages.append(tool_msg)
 
     if tool_messages:
-        return {"messages": tool_messages}
+        return {
+            "messages": tool_messages,
+        }

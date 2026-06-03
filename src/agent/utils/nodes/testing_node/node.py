@@ -31,8 +31,6 @@ with open("./src/agent/utils/nodes/testing_node/SYSTEM_PROMPT.md") as file:
 async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
     sonnet_with_tools = sonnet.bind_tools(testing_tools)
     # Always work from a copy so we never mutate shared state.
-    sequence = list(state.get("sequence") or [])
-    sequence_step = sequence[0]
     PROJ_PATH = f"{WORKSPACE_DIR}/{config['metadata']['thread_id']}"
     thread_id = config["metadata"]["thread_id"]
 
@@ -54,8 +52,8 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
         *state.get("messages", []),
     ]
 
-    if state.get("messages", [])[-1].type != "tool":
-        model_input.append(HumanMessage(sequence_step.prompt))
+    # if state.get("messages", [])[-1].type != "tool":
+    #     model_input.append(HumanMessage(""))
 
     try:
         response = await tester.ainvoke(input=model_input)
@@ -64,7 +62,6 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
 
         # Advance sequence and notify CONFIG_SERVER only when this step is done.
         if not response.tool_calls:
-            new_sequence = sequence[1:]
             if CONFIG_SERVER:
                 try:
                     async with aiohttp.ClientSession(CONFIG_SERVER) as session:
@@ -84,13 +81,14 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
                         extra={"thread_id": thread_id},
                     )
         else:
-            new_sequence = sequence
+            pass
 
         return {
             "messages": [response],
-            "sequence": new_sequence,
             "testing_tool_call_count": state.get("testing_tool_call_count", 0)
             + len(response.tool_calls or []),
+            "prompt_for_next_node": None,
+            "next_node": None
         }
 
     except anthropic.APIError as e:
@@ -100,7 +98,8 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
                     f"Node {inspect.currentframe().f_code.co_name} failed with Anthropic API error: {e.message}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None
         }
 
     except Exception as e:
@@ -110,5 +109,6 @@ async def testing_node(state: AgentState, config: RunnableConfig) -> AgentState:
                     f"Node {inspect.currentframe().f_code.co_name} failed with: {str(e)}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None
         }

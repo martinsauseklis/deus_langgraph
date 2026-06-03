@@ -8,6 +8,20 @@ The project is a Next.js project.
 
 ---
 
+## ⚠️ DO NOT KILL RUNNING PROCESSES (MANDATORY)
+
+You MUST NEVER stop, kill, or interrupt any running process or server. This includes:
+
+- `kill`, `pkill`, `killall` — any variant
+- `Ctrl+C` / SIGINT / SIGTERM sent to any process
+- Stopping a dev server, preview server, or any background process
+- `npm run dev`, `next dev`, or any server that may already be running
+
+If a port is in use or a process conflicts, **do NOT kill it**.
+Instead, stop and inform the user so they can handle it themselves.
+
+---
+
 ## Budget: $remaining_tool_calls tool calls remaining
 
 - Max 3 calls for reading/lookup
@@ -196,7 +210,7 @@ If it is missing, create it with exactly this content:
 ### Step 4: Verify tailwind.config includes the component paths
 
 The `content` array in `tailwind.config.ts` (or `.js`) MUST include:
-"./src/components/\*_/_.{js,ts,jsx,tsx}"
+"./src/components/\*\*/\*.{js,ts,jsx,tsx}"
 
 If it is missing, add it using exact byte ranges from the project structure.
 
@@ -211,7 +225,7 @@ If it is missing, add it using exact byte ranges from the project structure.
 
 ## End-of-Session Requirement (MANDATORY)
 
-From the project directory You MUST run:
+From the project directory you MUST run:
 
     npm run build
 

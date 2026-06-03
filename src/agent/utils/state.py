@@ -1,14 +1,16 @@
-
-
-from typing import Annotated, Sequence, TypedDict, Literal
-from langchain.messages import AnyMessage
+from operator import add
+from typing import Annotated, Optional, Sequence, TypedDict, Literal
+from langchain.messages import AIMessage, AnyMessage
 from langgraph.graph import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
 
 class NodePrompts(BaseModel):
     node: Literal[
         "business_analyst_node", "ui_ux_node", "developer_node", "testing_node"
-    ] = Field(description="Name of the node that will be executed. The names should be self explanatory about the role of each node")
+    ] = Field(
+        description="Name of the node that will be executed. The names should be self explanatory about the role of each node"
+    )
     prompt: str = Field(description="""The prompt for the node containing 
                         the task and which is the next node that will 
                         receive the output of current node. Next node needed so the current node
@@ -29,5 +31,6 @@ class AgentState(TypedDict):
     project_structure: dict  # full index, not injected raw into prompt
     tool_call_count: int
     testing_tool_call_count: int  # separate budget for testing agent
-    sequence: PlannerOutput
+    tasks: Annotated[list[tuple[str, str]], lambda a, b: b]
+    ba_tool_calls: int
 

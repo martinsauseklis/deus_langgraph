@@ -29,11 +29,9 @@ with open("./src/agent/utils/nodes/developer_node/SYSTEM_PROMPT.md") as file:
 
 @add_logger
 async def developer_node(state: AgentState, config: RunnableConfig) -> AgentState:
+    
     sonnet_with_tools = sonnet.bind_tools(developer_tools)
 
-    # Always work from a copy so we never mutate shared state.
-    sequence = list(state.get("sequence") or [])
-    sequence_step = sequence[0]
     PROJ_PATH = f"{WORKSPACE_DIR}/{config['metadata']['thread_id']}"
     remaining_tool_calls = MAX_TOOL_CALLS - state.get("tool_call_count", 0)
     sen_dev = sonnet_with_tools if remaining_tool_calls > 0 else sonnet
@@ -52,20 +50,20 @@ async def developer_node(state: AgentState, config: RunnableConfig) -> AgentStat
         *state["messages"],
     ]
 
-    if state.get("messages", [])[-1].type != "tool":
-        model_input.append(HumanMessage(sequence_step.prompt))
+    # if state.get("messages", [])[-1].type != "tool":
+    #     model_input.append(HumanMessage(state["prompt_for_next_node"]))
     try:
         response = await sen_dev.ainvoke(input=model_input)
         response.name = "senior_developer"
 
         # Advance sequence only when this step is complete (no more tool calls).
-        new_sequence = sequence[1:] if not response.tool_calls else sequence
 
         return {
             "messages": [response],
-            "sequence": new_sequence,
             "tool_call_count": state.get("tool_call_count", 0)
             + len(response.tool_calls or []),
+            "prompt_for_next_node": None,
+            "next_node": None
         }
 
     except anthropic.APIError as e:
@@ -75,7 +73,8 @@ async def developer_node(state: AgentState, config: RunnableConfig) -> AgentStat
                     f"Node {inspect.currentframe().f_code.co_name} failed with Anthropic API error: {e.message}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None
         }
 
     except Exception as e:
@@ -85,5 +84,6 @@ async def developer_node(state: AgentState, config: RunnableConfig) -> AgentStat
                     f"Node {inspect.currentframe().f_code.co_name} failed with: {str(e)}"
                 )
             ],
-            "sequence": [],
+            "prompt_for_next_node": None,
+            "next_node": None
         }
