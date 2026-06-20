@@ -169,8 +169,3 @@ make dev      # start the dev server, logs to /tmp/langgraph_dev.log
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
-
-## Author
-
-Built by **Mārtiņš** — web developer working on automation and AI agent systems.
-[GitHub](https://github.com/<your-username>) · [X / Twitter](https://x.com/martinsauseklis)
